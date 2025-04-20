@@ -1,0 +1,78 @@
+﻿@page "/"
+@using HandAndFoot.Logic
+@using System.Linq
+
+<h3>Hand and Foot (Web UI)</h3>
+
+@if (!gameStarted)
+{
+    <div>
+        <label>Number of players:</label>
+        <InputNumber @bind-Value="numPlayers" Min="2" />
+        <button @onclick="StartGame">Start Game</button>
+    </div>
+}
+else
+{
+    <div>
+        <p><strong>Round:</strong> @game.CurrentRound</p>
+        <p><strong>Current Player:</strong> @currentPlayer.Name</p>
+        <p><strong>Top of Discard:</strong> @game.DiscardPile.Peek()</p>
+
+        <h4>@(currentPlayer.HasUsedHand ? "Foot" : "Hand")</h4>
+        <ul>
+            @foreach (var card in currentPile)
+            {
+                <li>@card</li>
+            }
+        </ul>
+
+        <div class="actions">
+            <button @onclick="() => DrawCards()">Draw 2 Cards</button>
+            <button @onclick="() => PickUpDiscard()">Pick Up Discard Pile</button>
+            <button @onclick="() => NextPlayer()">End Turn</button>
+        </div>
+
+        <p><em>Note:</em> Meld and discard interaction will be added next.</p>
+    </div>
+}
+
+@code {
+    private HandAndFootGame game;
+    private bool gameStarted;
+    private int numPlayers = 2;
+    private int currentIndex;
+
+    private Player currentPlayer => game.Players[currentIndex];
+    private List<Card> currentPile => currentPlayer.HasUsedHand ? currentPlayer.Foot : currentPlayer.Hand;
+
+    private void StartGame()
+    {
+        game = new HandAndFootGame(numPlayers);
+        gameStarted = true;
+        currentIndex = 0;
+    }
+
+    private void DrawCards()
+    {
+        var drawn = currentPlayer.DrawFromStock(game.StockPile, 2);
+        foreach (var c in drawn)
+            (currentPlayer.HasUsedHand ? currentPlayer.Foot : currentPlayer.Hand).Add(c);
+    }
+
+    private void PickUpDiscard()
+    {
+        currentPlayer.PickupDiscard(game.DiscardPile);
+    }
+
+    private void NextPlayer()
+    {
+        // Placeholder: no meld/discard yet
+        currentIndex = (currentIndex + 1) % game.Players.Count;
+        if (game.IsRoundOver)
+        {
+            var net = game.EndRound();
+            // TODO: show result
+        }
+    }
+}
