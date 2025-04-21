@@ -8,8 +8,8 @@
 {
     <div>
         <label>Number of players:</label>
-        <InputNumber @bind-Value="numPlayers" Min="2" />
-        <button @onclick="StartGame">Start Game</button>
+        <InputNumber @bind-Value="numPlayers" Min="2" class="form-control d-inline-block w-auto" />
+        <button class="btn btn-primary ml-2" @onclick="StartGame">Start Game</button>
     </div>
 }
 else
@@ -23,17 +23,76 @@ else
         <ul>
             @foreach (var card in currentPile)
             {
-                <li>@card</li>
+                <li>
+                    <input type="checkbox"
+                           checked="@selectedCards.Contains(card)"
+                           disabled="@(currentMeld == null || !CanSelectCard(card))"
+                           @onchange="@(e => OnCardSelectionChanged(card, (bool)e.Value))" />
+                    @card (Points: @card.PointValue)
+                </li>
             }
         </ul>
 
-        <div class="actions">
-            <button @onclick="() => DrawCards()">Draw 2 Cards</button>
-            <button @onclick="() => PickUpDiscard()">Pick Up Discard Pile</button>
-            <button @onclick="() => NextPlayer()">End Turn</button>
+        <div class="meld-section">
+            <label>Select Rank for New Meld:</label>
+            <InputSelect @bind-Value="selectedRank" class="form-control d-inline-block w-auto ml-2">
+                @foreach (var r in Enum.GetValues<Rank>().Cast<Rank>().Where(r => r != Rank.Three))
+                {
+                    <option value="@r">@r</option>
+                }
+            </InputSelect>
+            <button class="btn btn-secondary ml-2" @onclick="StartNewMeld" disabled="@isBuildingMeld">Begin Meld</button>
+
+            @if (isBuildingMeld)
+            {
+                <p>Building Meld of <strong>@currentMeld.Rank</strong>: @currentMeld.MeldPoints() points (@currentMeld.Count/7 cards)</p>
+                <p><strong>Meld Type:</strong> @(currentMeld.IsClean ? "Clean" : "Dirty")</p>
+                <button class="btn btn-success mr-2" @onclick="AddToMeld" disabled="@(selectedCards.Count == 0)">Add Selected</button>
+                <button class="btn btn-warning" @onclick="FinishMeld" disabled="@(!currentMeld.IsValidInitial())">Finish Meld</button>
+                <button class="btn btn-danger ml-2" @onclick="CancelMeld">Cancel Meld</button>
+                @if (!currentMeld.IsValidInitial())
+                {
+                    <p class="text-danger">Meld must have 3–7 cards of rank @selectedRank, or ≥4 naturals + wilds.</p>
+                }
+            }
         </div>
 
-        <p><em>Note:</em> Meld and discard interaction will be added next.</p>
+        @if (newMelds.Any())
+        {
+            <div class="mt-3">
+                <h5>Pending Melds:</h5>
+                <ul>
+                    @foreach (var m in newMelds)
+                    {
+                        <li>
+                            <strong>@m.Rank</strong>: @m.Count cards, @m.MeldPoints() points
+                        </li>
+                    }
+                </ul>
+            </div>
+        }
+
+        <div class="discard-section mt-3">
+            <label>Choose card to discard:</label>
+            <select class="form-control d-inline-block w-auto ml-2" @onchange="OnDiscardChanged">
+                <option value="">-- select --</option>
+                @for (int i = 0; i < currentPile.Count; i++)
+                {
+                    <option value="@i">@currentPile[i]</option>
+                }
+            </select>
+        </div>
+
+        @if (!string.IsNullOrEmpty(turnError))
+        {
+            <p class="text-danger mt-2">@turnError</p>
+        }
+
+        <div class="actions mt-3">
+            <button class="btn btn-primary" @onclick="ExecuteTurn" disabled="@(discardCard == null)">Play Turn</button>
+        </div>
+
+        <p class="mt-2"><em>Note:</em> You must discard a card to end your turn.</p>
     </div>
 }
 
@@ -46,6 +105,17 @@ else
     private Player currentPlayer => game.Players[currentIndex];
     private List<Card> currentPile => currentPlayer.HasUsedHand ? currentPlayer.Foot : currentPlayer.Hand;
 
+    private Rank selectedRank = Rank.Four;
+    private Meld currentMeld;
+    private bool isBuildingMeld;
+    private List<Card> selectedCards = new();
+    private List<Meld> newMelds = new();
+
+    private int? discardIndex;
+    private Card discardCard;
+
+    private string turnError;
+
     private void StartGame()
     {
         game = new HandAndFootGame(numPlayers);
@@ -53,26 +123,110 @@ else
         currentIndex = 0;
     }
 
-    private void DrawCards()
+    private void OnCardSelectionChanged(Card card, bool isSelected)
     {
-        var drawn = currentPlayer.DrawFromStock(game.StockPile, 2);
-        foreach (var c in drawn)
-            (currentPlayer.HasUsedHand ? currentPlayer.Foot : currentPlayer.Hand).Add(c);
+        if (!isBuildingMeld) return;
+        if (isSelected)
+        {
+            if (CanSelectCard(card) && !selectedCards.Contains(card))
+                selectedCards.Add(card);
+        }
+        else
+        {
+            selectedCards.Remove(card);
+        }
     }
 
-    private void PickUpDiscard()
+    private bool CanSelectCard(Card card)
     {
-        currentPlayer.PickupDiscard(game.DiscardPile);
+        if (!isBuildingMeld) return false;
+        if (currentMeld.Count >= 7) return false;
+        if (card.Rank == Rank.Three) return false;
+        return card.Rank == currentMeld.Rank || card.IsWild;
+    }
+
+    private void StartNewMeld()
+    {
+        currentMeld = new Meld(selectedRank);
+        selectedCards.Clear();
+        isBuildingMeld = true;
+    }
+
+    private void AddToMeld()
+    {
+        foreach (var c in selectedCards.ToList())
+        {
+            try { currentPlayer.PlayToMeld(c, currentMeld); selectedCards.Remove(c); }
+            catch {} // UI guards validity
+        }
+    }
+
+    private void FinishMeld()
+    {
+        if (!currentMeld.IsValidInitial()) return;
+        newMelds.Add(currentMeld);
+        isBuildingMeld = false;
+        currentMeld = null;
+        selectedCards.Clear();
+    }
+
+    private void CancelMeld()
+    {
+        isBuildingMeld = false;
+        currentMeld = null;
+        selectedCards.Clear();
+    }
+
+    private void OnDiscardChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var idx) && idx >= 0 && idx < currentPile.Count)
+        {
+            discardIndex = idx;
+            discardCard = currentPile[idx];
+            turnError = null;
+        }
+        else
+        {
+            discardIndex = null;
+            discardCard = null;
+        }
+    }
+
+    private void ExecuteTurn()
+    {
+        if (discardCard == null)
+        {
+            turnError = "Please select a card to discard.";
+            return;
+        }
+        try
+        {
+            game.TakeTurn(currentIndex, newMelds, discardCard);
+            turnError = null;
+        }
+        catch (Exception ex)
+        {
+            turnError = ex.Message;
+            return;
+        }
+
+        // Reset state for next player
+        newMelds.Clear();
+        isBuildingMeld = false;
+        currentMeld = null;
+        selectedCards.Clear();
+        discardIndex = null;
+        discardCard = null;
+
+        NextPlayer();
     }
 
     private void NextPlayer()
     {
-        // Placeholder: no meld/discard yet
         currentIndex = (currentIndex + 1) % game.Players.Count;
         if (game.IsRoundOver)
         {
             var net = game.EndRound();
-            // TODO: show result
         }
     }
 }

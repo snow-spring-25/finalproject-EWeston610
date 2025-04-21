@@ -13,6 +13,7 @@ namespace HandAndFoot.Logic
         public int Count => cards.Count;
 
         public Meld(Rank rank) => Rank = rank;
+        public IReadOnlyList<Card> Cards => cards;
 
         public void Add(Card c)
         {
