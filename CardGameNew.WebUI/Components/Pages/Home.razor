@@ -35,7 +35,7 @@ else
             <button @onclick="SaveGame" style="float:right">Save</button>
         </div>
 
-        <!-- Player Hand -->
+        //Player Hand
         <div style="margin:8px 0">
             @foreach (var (card, idx) in SortedHand().Select((c,i)=> (c,i)))
             {
@@ -46,7 +46,7 @@ else
             }
         </div>
 
-        <!-- Meld List -->
+        //Meld List
         <div>
             <h4>Your Melds</h4>
             @foreach (var meld in game.CurrentPlayer.Melds)
@@ -63,7 +63,7 @@ else
             <button @onclick="BeginNewMeld">Create New Meld</button>
         </div>
 
-        <!-- Meld Creator / Adder -->
+        //Meld Creator / Adder
         @if (inNewMeldMode)
         {
             <div style="border:1px solid #aaa; padding:8px; margin:8px 0">
@@ -116,7 +116,7 @@ else
             </div>
         }
 
-        <!-- Discard -->
+        //Discard
         @if (!inNewMeldMode && !inAddMeldMode)
         {
             <div style="margin-top:12px">
@@ -129,7 +129,6 @@ else
 }
 
 @code {
-    // — state
     private Game game;
     private bool gameStarted = false;
     private int playerCount = 2;
@@ -164,7 +163,7 @@ else
         }
     }
 
-    // — setup
+    // setup
     private async Task StartGame()
     {
         game = DeckBuilder.SetupGame(
@@ -196,7 +195,7 @@ else
         hasSavedGame = true;
     }
 
-    // — draw & turn
+    // draw & turn
     private async Task DrawPhase()
     {
         var player = game.CurrentPlayer;
@@ -223,7 +222,6 @@ else
         game.NextTurn();
     }
 
-    // — selection helpers
     private void ToggleSelect(int idx)
     {
         if (selectedIndices.Contains(idx)) selectedIndices.Remove(idx);
@@ -236,7 +234,6 @@ else
             .ThenBy(c => !c.IsWild)
             .ToList();
 
-    // — new meld
     private void BeginNewMeld()
     {
         inNewMeldMode = true;
@@ -258,13 +255,12 @@ else
         bool isClean = cards.All(c => !c.IsWild);
         game.CurrentPlayer.CreateMeld(newMeldRank.Value, isClean, cards);
 
-        // reset selection but do not end turn
+
         selectedIndices.Clear();
         inNewMeldMode = false;
         newMeldRank = null;
     }
 
-    // — add to existing meld
     private void BeginAddToMeld(IMeld meld)
     {
         inAddMeldMode = true;
