@@ -1,0 +1,324 @@
+﻿@page "/"
+@using CardGameNew.Logic
+@using System.Text.Json
+@inject IJSRuntime JS
+
+<style>
+  .card { display:inline-block; padding:4px 8px; margin:2px; border:1px solid #ccc; cursor:pointer; }
+  .selected { background-color:#def; }
+  .meld { margin:4px 0; }
+  .meld button { margin-left:8px; }
+</style>
+
+<h3>Hand &amp; Foot</h3>
+
+@if (!gameStarted)
+{
+    <div>
+        <label>Number of players: </label>
+        <input type="number" min="1" @bind="playerCount" style="width:60px" />
+        <button @onclick="StartGame">New Game</button>
+        @if (hasSavedGame)
+        {
+            <button @onclick="LoadGame">Load Saved Game</button>
+        }
+    </div>
+}
+else
+{
+    <div>
+        <div>
+            <strong>@game.CurrentPlayer.Name's Turn</strong>
+            &nbsp;|&nbsp; Score: @game.CalculateScore(game.CurrentPlayer)
+            &nbsp;|&nbsp; Hand: @game.CurrentPlayer.Hand.Cards.Count
+            &nbsp;|&nbsp; Foot: @game.CurrentPlayer.Foot.Cards.Count
+            <button @onclick="SaveGame" style="float:right">Save</button>
+        </div>
+
+        <!-- Player Hand -->
+        <div style="margin:8px 0">
+            @foreach (var (card, idx) in SortedHand().Select((c,i)=> (c,i)))
+            {
+                <span class="card @(selectedIndices.Contains(idx)? "selected": "")"
+                      @onclick="() => ToggleSelect(idx)">
+                    @(card.IsWild ? $"{card.Rank} (Wild)" : card.Rank.ToString())
+                </span>
+            }
+        </div>
+
+        <!-- Meld List -->
+        <div>
+            <h4>Your Melds</h4>
+            @foreach (var meld in game.CurrentPlayer.Melds)
+            {
+                var status = meld.IsClean ? "Clean" : "Dirty";
+                <div class="meld">
+                    @status meld of @meld.Rank — @meld.Cards.Count/7
+                    @if (meld.Cards.Count < 7)
+                    {
+                        <button @onclick="() => BeginAddToMeld(meld)">Add</button>
+                    }
+                </div>
+            }
+            <button @onclick="BeginNewMeld">Create New Meld</button>
+        </div>
+
+        <!-- Meld Creator / Adder -->
+        @if (inNewMeldMode)
+        {
+            <div style="border:1px solid #aaa; padding:8px; margin:8px 0">
+                <h5>New Meld</h5>
+                <label>Rank:</label>
+                <select @bind="newMeldRank">
+                    <option value="">-- select --</option>
+                    @foreach(var r in Enum.GetValues<Rank>().Where(r=> r!=Rank.Two && r!=Rank.Joker))
+                    {
+                        <option value="@r">@r</option>
+                    }
+                </select>
+                <div style="margin-top:4px">
+                    @if (newMeldRank != null)
+                    {
+                        <em>Select 3–7 cards (only @newMeldRank &amp; wilds):</em><br/>
+                        @foreach (var (card, idx) in FilteredForNewMeld().Select((c,i)=> (c,i)))
+                        {
+                            <span class="card @(selectedIndices.Contains(idx)? "selected": "")"
+                                  @onclick="() => ToggleSelect(idx)">
+                                @(card.IsWild ? $"{card.Rank} (Wild)" : card.Rank.ToString())
+                            </span>
+                        }
+                        <div style="margin-top:4px">
+                            <button @onclick="ConfirmNewMeld"
+                                    disabled="@(selectedIndices.Count < 3)">Confirm</button>
+                            <button @onclick="CancelMeld">Cancel</button>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+        else if (inAddMeldMode)
+        {
+            <div style="border:1px solid #aaa; padding:8px; margin:8px 0">
+                <h5>Add to @selectedMeldToAdd.Rank (@(selectedMeldToAdd.IsClean ? "Clean":"Dirty"))</h5>
+                <em>Select up to @((7 - selectedMeldToAdd.Cards.Count)) cards:</em><br/>
+                @foreach (var (card, idx) in FilteredForAdd().Select((c,i)=> (c,i)))
+                {
+                    <span class="card @(selectedIndices.Contains(idx)? "selected": "")"
+                          @onclick="() => ToggleSelect(idx)">
+                        @(card.IsWild ? $"{card.Rank} (Wild)" : card.Rank.ToString())
+                    </span>
+                }
+                <div style="margin-top:4px">
+                    <button @onclick="ConfirmAddToMeld"
+                            disabled="@(selectedIndices.Count == 0)">Confirm</button>
+                    <button @onclick="CancelMeld">Cancel</button>
+                </div>
+            </div>
+        }
+
+        <!-- Discard -->
+        @if (!inNewMeldMode && !inAddMeldMode)
+        {
+            <div style="margin-top:12px">
+                <button @onclick="Discard" disabled="@(selectedIndices.Count != 1)">
+                    Discard Selected Card
+                </button>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    // — state
+    private Game game;
+    private bool gameStarted = false;
+    private int playerCount = 2;
+    private bool hasSavedGame;
+    private bool[] hasTakenInitialDraw;
+    private int lastDrawPlayer = -1;
+
+    private List<int> selectedIndices = new();
+    private bool inNewMeldMode = false;
+    private bool inAddMeldMode = false;
+    private IMeld selectedMeldToAdd;
+    private Rank? newMeldRank;
+
+    private bool _checkedForSave = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_checkedForSave)
+        {
+            var saved = await JS.InvokeAsync<string>("localStorage.getItem", "savedGame");
+            hasSavedGame = !string.IsNullOrEmpty(saved);
+            _checkedForSave = true;
+            StateHasChanged();
+            return;
+        }
+
+        if (gameStarted && game.CurrentPlayerIndex != lastDrawPlayer)
+        {
+            await DrawPhase();
+            lastDrawPlayer = game.CurrentPlayerIndex;
+            StateHasChanged();
+        }
+    }
+
+    // — setup
+    private async Task StartGame()
+    {
+        game = DeckBuilder.SetupGame(
+            Enumerable.Range(1, playerCount).Select(i => $"Player {i}").ToArray()
+        );
+        hasTakenInitialDraw = new bool[playerCount];
+        gameStarted = true;
+        lastDrawPlayer = -1;
+        await JS.InvokeVoidAsync("localStorage.removeItem", "savedGame");
+    }
+
+    private async Task LoadGame()
+    {
+        var json = await JS.InvokeAsync<string>("localStorage.getItem", "savedGame");
+        if (!string.IsNullOrEmpty(json))
+        {
+            game = JsonSerializer.Deserialize<Game>(json, new JsonSerializerOptions { IncludeFields = true });
+            playerCount = game.Players.Count;
+            hasTakenInitialDraw = new bool[playerCount];
+            gameStarted = true;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SaveGame()
+    {
+        var json = JsonSerializer.Serialize(game, new JsonSerializerOptions { IncludeFields = true });
+        await JS.InvokeVoidAsync("localStorage.setItem", "savedGame", json);
+        hasSavedGame = true;
+    }
+
+    // — draw & turn
+    private async Task DrawPhase()
+    {
+        var player = game.CurrentPlayer;
+        if (player.Hand.Cards.Count == 0 && player.Foot.Cards.Count > 0)
+        {
+            while (player.Foot.Cards.Count > 0)
+                player.Hand.Add(player.Foot.Draw());
+        }
+        int idx = game.CurrentPlayerIndex;
+        if (!hasTakenInitialDraw[idx])
+        {
+            hasTakenInitialDraw[idx] = true;
+            return;
+        }
+        for (int i = 0; i < 2; i++)
+            player.Hand.Add(game.DrawPile.Draw());
+    }
+
+    private void EndTurn()
+    {
+        selectedIndices.Clear();
+        inNewMeldMode = inAddMeldMode = false;
+        newMeldRank = null;
+        game.NextTurn();
+    }
+
+    // — selection helpers
+    private void ToggleSelect(int idx)
+    {
+        if (selectedIndices.Contains(idx)) selectedIndices.Remove(idx);
+        else selectedIndices.Add(idx);
+    }
+
+    private List<Card> SortedHand() =>
+        game.CurrentPlayer.Hand.Cards
+            .OrderBy(c => c.Rank)
+            .ThenBy(c => !c.IsWild)
+            .ToList();
+
+    // — new meld
+    private void BeginNewMeld()
+    {
+        inNewMeldMode = true;
+        inAddMeldMode = false;
+        selectedIndices.Clear();
+        newMeldRank = null;
+    }
+
+    private IEnumerable<Card> FilteredForNewMeld()
+    {
+        var hand = SortedHand();
+        return hand.Where(c => c.Rank == newMeldRank || c.IsWild);
+    }
+
+    private void ConfirmNewMeld()
+    {
+        var valid = FilteredForNewMeld().ToList();
+        var cards = selectedIndices.Select(i => valid[i]).ToList();
+        bool isClean = cards.All(c => !c.IsWild);
+        game.CurrentPlayer.CreateMeld(newMeldRank.Value, isClean, cards);
+
+        // reset selection but do not end turn
+        selectedIndices.Clear();
+        inNewMeldMode = false;
+        newMeldRank = null;
+    }
+
+    // — add to existing meld
+    private void BeginAddToMeld(IMeld meld)
+    {
+        inAddMeldMode = true;
+        inNewMeldMode = false;
+        selectedIndices.Clear();
+        selectedMeldToAdd = meld;
+    }
+
+    private IEnumerable<Card> FilteredForAdd()
+    {
+        var hand = SortedHand();
+        int maxAdds = 7 - selectedMeldToAdd.Cards.Count;
+        return hand.Where(c =>
+            selectedMeldToAdd.CanAdd(c) ||
+            (selectedMeldToAdd.IsClean && c.IsWild)
+        ).Take(maxAdds);
+    }
+
+    private void ConfirmAddToMeld()
+    {
+        var valid = FilteredForAdd().ToList();
+        var cardsToAdd = selectedIndices.Select(i => valid[i]).ToList();
+
+        if (selectedMeldToAdd.IsClean && cardsToAdd.Any(c => c.IsWild))
+        {
+            var dirty = new DirtyMeld(selectedMeldToAdd.Rank);
+            foreach (var c in selectedMeldToAdd.Cards) dirty.Add(c);
+            game.CurrentPlayer.Melds.Remove(selectedMeldToAdd);
+            selectedMeldToAdd = dirty;
+            game.CurrentPlayer.Melds.Add(dirty);
+        }
+
+        foreach (var c in cardsToAdd)
+        {
+            game.CurrentPlayer.Hand.Remove(c);
+            selectedMeldToAdd.Add(c);
+        }
+
+        selectedIndices.Clear();
+        inAddMeldMode = false;
+    }
+
+    private void CancelMeld()
+    {
+        inNewMeldMode = inAddMeldMode = false;
+        selectedIndices.Clear();
+        newMeldRank = null;
+    }
+
+    private void Discard()
+    {
+        var hand = SortedHand();
+        var c = hand[selectedIndices[0]];
+        game.CurrentPlayer.Discard(c);
+        EndTurn();
+    }
+}
