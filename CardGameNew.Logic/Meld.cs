@@ -1,9 +1,6 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-
 namespace CardGameNew.Logic
 {
+    // REQ#2.1.1
     public abstract class Meld : IMeld
     {
         protected readonly List<Card> _cards = new List<Card>();
@@ -26,6 +23,7 @@ namespace CardGameNew.Logic
             _cards.Add(card);
         }
 
+        // REQ#2.1.1
         public bool IsComplete => _cards.Count >= 3 && _cards.Count <= 7;
     }
 }

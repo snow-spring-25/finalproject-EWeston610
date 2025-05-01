@@ -1,9 +1,9 @@
 using System.Linq;
-
 namespace CardGameNew.Logic
 {
     public static class ScoreCalculator
     {
+        // REQ#5.1.1
         public static int CalculateCardScore(Deck deck)
         {
             return deck.Cards.Sum(card => card.Rank switch

@@ -51,8 +51,8 @@ namespace CardGameNew.Logic
 
         public Game(params string[] playerNames)
         {
-            if (playerNames.Length < 1)
-                throw new ArgumentException("Must have at least one player.");
+            if (playerNames.Length < 1) throw new ArgumentException("Must have at least one player.");
+            // REQ#5.1.1: Use a LINQ query on a list to create players
             Players = playerNames.Select(n => new Player(n)).ToList();
             CurrentPlayerIndex = 0;
         }

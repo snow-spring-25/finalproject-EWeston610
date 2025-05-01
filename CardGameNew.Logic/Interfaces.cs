@@ -1,5 +1,6 @@
 namespace CardGameNew.Logic
 {
+    // REQ#2.2.1
     public interface IMeld
     {
         Rank Rank { get; }
@@ -9,8 +10,6 @@ namespace CardGameNew.Logic
         void Add(Card card);
         bool IsComplete { get; }
     }
-
-
     public interface IGameSerializer
     {
         void Save(Game game, string path);
