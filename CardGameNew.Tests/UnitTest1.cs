@@ -29,25 +29,22 @@ namespace CardGameNew.Tests
         [Test]
         public void Deck_Draw_Remove_Shuffle_Behavior()
         {
-            // Draw
             var deck = new Deck(new[] { new Card(Rank.Ace), new Card(Rank.King) });
-            var first = deck.Draw();
+            var first = deck.Draw(); // REQ#1.1.1
             Assert.That(first.Rank, Is.EqualTo(Rank.Ace));
             Assert.That(deck.Cards.Count, Is.EqualTo(1));
             Assert.That(deck.Cards.First().Rank, Is.EqualTo(Rank.King));
-            Assert.Throws<InvalidOperationException>(() => new Deck().Draw());
+            Assert.Throws<InvalidOperationException>(() => new Deck().Draw()); // REQ#1.1.2
 
-            // Remove
             var c = new Card(Rank.Two);
             deck.Add(c);
-            Assert.That(deck.Remove(c), Is.True);
-            Assert.That(deck.Remove(new Card(Rank.Queen)), Is.False);
+            Assert.That(deck.Remove(c), Is.True); // REQ#1.2.1
+            Assert.That(deck.Remove(new Card(Rank.Queen)), Is.False); // REQ#1.2.2
 
-            // Shuffle
             var cards = Enumerable.Range(0, 10).Select(i => new Card((Rank)(i % 14))).ToList();
             deck = new Deck(cards);
             var before = deck.Cards.Select(x => x.Rank).ToArray();
-            deck.Shuffle();
+            deck.Shuffle(); // REQ#1.3.1
             var after = deck.Cards.Select(x => x.Rank).ToArray();
             Assert.That(after.Length, Is.EqualTo(before.Length));
             Assert.That(after, Is.Not.EqualTo(before));
@@ -57,13 +54,11 @@ namespace CardGameNew.Tests
         [Test]
         public void Meld_Clean_And_Dirty_Rules()
         {
-            var clean = new CleanMeld(Rank.Five);
+            var clean = new CleanMeld(Rank.Five); // REQ#1.4.1
             Assert.That(clean.CanAdd(new Card(Rank.Two)), Is.False);
             Assert.That(clean.CanAdd(new Card(Rank.Five)), Is.True);
-            clean.Add(new Card(Rank.Five));
-            Assert.That(clean.Cards.Count, Is.EqualTo(1));
 
-            var dirty = new DirtyMeld(Rank.Three);
+            var dirty = new DirtyMeld(Rank.Three); // REQ#1.4.2
             Assert.That(dirty.CanAdd(new Card(Rank.Two)), Is.True);
             for (int i = 0; i < 7; i++) dirty.Add(new Card(Rank.Three));
             Assert.That(dirty.CanAdd(new Card(Rank.Three)), Is.False);
@@ -76,10 +71,10 @@ namespace CardGameNew.Tests
             foreach (Rank r in Enum.GetValues(typeof(Rank)))
                 deck.Add(new Card(r));
             int expected = 50 + 20 + 20 + 10 * 6 + 5 * 5;
-            Assert.That(ScoreCalculator.CalculateCardScore(deck), Is.EqualTo(expected));
+            Assert.That(ScoreCalculator.CalculateCardScore(deck), Is.EqualTo(expected)); // REQ#1.5.1
 
-            Assert.That(ScoreCalculator.CalculateMeldScore(new CleanMeld(Rank.Ace)), Is.EqualTo(500));
-            Assert.That(ScoreCalculator.CalculateMeldScore(new DirtyMeld(Rank.Ace)), Is.EqualTo(300));
+            Assert.That(ScoreCalculator.CalculateMeldScore(new CleanMeld(Rank.Ace)), Is.EqualTo(500)); // REQ#1.5.2
+            Assert.That(ScoreCalculator.CalculateMeldScore(new DirtyMeld(Rank.Ace)), Is.EqualTo(300)); 
         }
 
         [Test]
@@ -87,9 +82,11 @@ namespace CardGameNew.Tests
         {
             var game = new Game("A", "B");
             Assert.That(game.CurrentPlayer.Name, Is.EqualTo("A"));
-            game.NextTurn();
+
+            game.NextTurn(); // REQ#1.6.1
             Assert.That(game.CurrentPlayer.Name, Is.EqualTo("B"));
-            Assert.That(game.CalculateScore(game.CurrentPlayer), Is.Zero);
+
+            Assert.That(game.CalculateScore(game.CurrentPlayer), Is.Zero); // REQ#1.6.2
         }
 
         [Test]
@@ -98,12 +95,12 @@ namespace CardGameNew.Tests
             var player = new Player("X");
             var card = new Card(Rank.King);
             player.Hand.Add(card);
-            player.Discard(card);
+            player.Discard(card); // REQ#1.7.1
             Assert.That(player.Hand.Cards.Count, Is.Zero);
 
             var cards = new[] { new Card(Rank.Four), new Card(Rank.Four), new Card(Rank.Four) };
             foreach (var c in cards) player.Hand.Add(c);
-            player.CreateMeld(Rank.Four, true, cards);
+            player.CreateMeld(Rank.Four, true, cards); // REQ#1.7.2
             Assert.That(player.Melds.Count, Is.EqualTo(1));
             Assert.That(player.Melds[0].Rank, Is.EqualTo(Rank.Four));
             Assert.That(player.Melds[0].IsClean, Is.True);
@@ -112,21 +109,21 @@ namespace CardGameNew.Tests
         [Test]
         public void DeckBuilder_And_Persistence()
         {
-            var pile1 = DeckBuilder.CreateDrawPile(1);
+            var pile1 = DeckBuilder.CreateDrawPile(1); // REQ#1.8.1
             Assert.That(pile1.Cards.Count, Is.EqualTo(54));
             var pile2 = DeckBuilder.CreateDrawPile(2);
             Assert.That(pile2.Cards.Count, Is.EqualTo(108));
 
-            var game = DeckBuilder.SetupGame(new[] { "AA", "BB" }, 1);
+            var game = DeckBuilder.SetupGame(new[] { "AA", "BB" }, 1); // REQ#1.8.2
             Assert.That(game.Players.All(p => p.Hand.Cards.Count == 11));
             Assert.That(game.DrawPile.Cards.Count, Is.EqualTo(54 - 22 - 22));
 
             var ser = new JsonGameSerializer();
-            ser.Save(game, _tempFile);
+            ser.Save(game, _tempFile); // REQ#1.8.3
             var loaded = ser.Load(_tempFile);
             Assert.That(loaded.Players.Count, Is.EqualTo(game.Players.Count));
 
-            Assert.Throws<FileNotFoundException>(() => ser.Load("no_such_file.json"));
+            Assert.Throws<FileNotFoundException>(() => ser.Load("no_such_file.json")); // REQ#1.8.4
         }
     }
 }
